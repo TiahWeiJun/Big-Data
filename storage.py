@@ -50,8 +50,6 @@ def storeData():
     compressYearMapping = createYearCompression()
     compressMonthMapping = createMonthCompression()
 
-    
-
     # Open the CSV file for reading
     with open(DATA_FILE, 'r', newline='') as csvfile:
         reader = csv.DictReader(csvfile)

@@ -78,6 +78,7 @@ def processQuery(matricNumber, resultColumn, typeStatistic):
 
 
 def writeResultToFile(matricNumber, resultColumn, typeStatistic, year, startMonth, town, statValue):
+    os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
     outputFileName = f"{OUTPUT_DIRECTORY}/ScanResult_{matricNumber}.csv"
     fileExists = os.path.isfile(outputFileName)
     with open(outputFileName, 'a' if fileExists else 'w', newline='') as outputFile:
@@ -102,7 +103,6 @@ def writeResultToFile(matricNumber, resultColumn, typeStatistic, year, startMont
 
 
 def executeQuery(queryYear, queryStartMonth, queryEndMonth, queryTown, resultColumn, typeStatistic):
-    
     # take in zone map for the year and find relevant batches
     batchList = []
     with open(f"{STORAGE_DIRECTORY}/zone-map-year.csv", 'r', newline='') as csvfile:
@@ -117,16 +117,16 @@ def executeQuery(queryYear, queryStartMonth, queryEndMonth, queryTown, resultCol
     totalStatDict = {
         "min": float('inf'),
         "count": 0,
-        "sum": 0
+        "sum": 0,
     }
     # to calculate sd
     sumSquaredDiff = [0]
     cacheKey = f"{queryYear}-{queryStartMonth}-{queryTown}-{resultColumn}"
     
     # do batch by batch
-    yearBatchList = []
     openedFiles = {}
     for batch in batchList:
+        yearBatchList = []
         # open relevant files first
         for col in NEW_RELEVANT_COLUMNS:
             # only take the result column file we want
@@ -141,6 +141,7 @@ def executeQuery(queryYear, queryStartMonth, queryEndMonth, queryTown, resultCol
         yearReader = csv.reader(openedFiles[f"year-{batch}"])
         for row in yearReader:
             yearBatchList.append(row[0])
+        
 
         # do vector by vector
         curYearIndex = 0
@@ -152,14 +153,15 @@ def executeQuery(queryYear, queryStartMonth, queryEndMonth, queryTown, resultCol
             curYearIndex += VECTOR_SIZE
 
             # run multi-threading for each vector in one batch
-            # thread = threading.Thread(target=vectorizedQueryProcessing, args=(yearVector, iterations, openedFiles, batch,queryYear, queryStartMonth, queryEndMonth, queryTown, resultColumn, typeStatistic, cacheKey, totalStatDict, sumSquaredDiff ))
-            # thread.start()
-            # threads.append(thread)
-            vectorizedQueryProcessing(yearVector, iterations, openedFiles, batch,queryYear, queryStartMonth, queryEndMonth, queryTown, resultColumn, typeStatistic, cacheKey, totalStatDict, sumSquaredDiff )
+            thread = threading.Thread(target=vectorizedQueryProcessing, args=(yearVector, iterations, openedFiles, batch,queryYear, queryStartMonth, queryEndMonth, queryTown, resultColumn, typeStatistic, cacheKey, totalStatDict, sumSquaredDiff ))
+            thread.start()
+            threads.append(thread)
+            # vectorizedQueryProcessing(yearVector, iterations, openedFiles, batch,queryYear, queryStartMonth, queryEndMonth, queryTown, resultColumn, typeStatistic, cacheKey, totalStatDict, sumSquaredDiff )
         
         # wait for all threads to finish
-        # for thread in threads:
-        #     thread.join()
+        for thread in threads:
+            thread.join()
+            
 
          # Close all opened batch files
         for file in openedFiles.values():
@@ -195,13 +197,14 @@ def vectorizedQueryProcessing(yearVector, iterations, openedFiles, batch,queryYe
 
     if len(vectorPositionList) == 0: 
         return
-
+    
     # handle month processing
     vectorPositionList = vectorizedMonthProcessing(openedFiles[f"month-{batch}"], queryStartMonth, queryEndMonth, vectorPositionList)
 
     # check if vectorPosition list is empty
     if len(vectorPositionList) == 0: 
         return
+    
 
     # handle town processing
     vectorPositionList = vectorizedTownProcessing(openedFiles[f"town-{batch}"], queryTown, vectorPositionList)
@@ -228,6 +231,7 @@ def vectorizedQueryProcessing(yearVector, iterations, openedFiles, batch,queryYe
             cachedTotalAverage = statDict["sum"]/statDict["count"]
             for val in resultVector:
                 sumSquaredDiff[0] += (val - cachedTotalAverage) ** 2
+
 
 
 def vectorizedYearProcessing(yearVector, queryYear, iterations):
